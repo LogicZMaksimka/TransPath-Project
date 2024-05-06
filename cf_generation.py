@@ -22,7 +22,8 @@ from pathlib import Path
 from tqdm import tqdm
 from scipy.spatial import distance
 
-
+import cppimport.import_hook
+from grid_planner import grid_planner
 
 class Map:
     """
@@ -230,8 +231,27 @@ def fill_true_dists_8_way(finish_node: Node, task_map: Map):
 
     return node_levels
 
+def invert_cells(map: Map):
+    # ones_ids = map._cells == 1
+    # zeros_ids = map._cells == 0
+    new_cells = map._cells.copy()
+    new_cells[map._cells == 0] = 1
+    new_cells[map._cells == 1] = 0
+
+    return Map(new_cells)
+
+def fill_true_dists_8_way_cpp(finish_node: Node, task_map: Map):
+    task_map = invert_cells(task_map)
+    planner = grid_planner(task_map._cells.tolist())
+    goal = (finish_node.i, finish_node.j)
+
+    true_dists = planner.fill_true_dists_8_way(goal)
+    true_dists = np.array(true_dists)
+    return true_dists
+
+
 def fill_cf_values(finish_node: Node, task_map: Map, heuristic_func: Callable):
-    true_dists = fill_true_dists_8_way(finish_node, task_map)
+    true_dists = fill_true_dists_8_way_cpp(finish_node, task_map)
     true_dists[true_dists == 0.0] = 1 # to ignore zero division
     
     h_values = fill_heuristic_values(finish_node, task_map, heuristic_func)
@@ -256,21 +276,21 @@ def extract_node_pos(map):
 
 
 if __name__ == "__main__":
-    load_dir = Path("/archive/savkin/raw_datasets/MIPT/TransPath_data")
+    load_dir = Path("/home/logiczmaksimka/Downloads")
 
     load_path = load_dir / "val"
 
-    abs = np.load(load_path / "abs.npy")
-    cf = np.load(load_path / "cf.npy")
-    focal = np.load(load_path / "focal.npy")
+    # abs = np.load(load_path / "abs.npy")
+    # cf = np.load(load_path / "cf.npy")
+    # focal = np.load(load_path / "focal.npy")
     goals = np.load(load_path / "goals.npy")
     maps = np.load(load_path / "maps.npy")
-    starts = np.load(load_path / "starts.npy")
+    # starts = np.load(load_path / "starts.npy")
 
     cf_pred_arr = []
     for i in tqdm(range(10)):
         map = Map(maps[i][0])
-        cf_true = cf[i][0]
+        # cf_true = cf[i][0]
 
         # start = Node(*extract_node_pos(starts[i][0]))
         goal_node = Node(*extract_node_pos(goals[i][0]))
