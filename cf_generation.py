@@ -4,7 +4,7 @@ from collections import deque
 from typing import List, Callable
 
 import numpy as np
-
+import argparse
 
 from PIL import Image, ImageDraw
 import numpy as np
@@ -276,27 +276,31 @@ def extract_node_pos(map):
 
 
 if __name__ == "__main__":
-    load_dir = Path("/home/logiczmaksimka/Downloads")
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--loaddir', type=str)
+    parser.add_argument('--heuristic', type=str, default="cf")
+    args = parser.parse_args()
 
-    load_path = load_dir / "val"
+    load_dir = Path(args.loaddir)
 
-    # abs = np.load(load_path / "abs.npy")
-    # cf = np.load(load_path / "cf.npy")
-    # focal = np.load(load_path / "focal.npy")
-    goals = np.load(load_path / "goals.npy")
-    maps = np.load(load_path / "maps.npy")
-    # starts = np.load(load_path / "starts.npy")
+    goals = np.load(load_dir / "goals.npz")
+    maps = np.load(load_dir / "maps.npz")
 
-    cf_pred_arr = []
-    for i in tqdm(range(10)):
-        map = Map(maps[i][0])
-        # cf_true = cf[i][0]
+    result = {}
+    for data_type in maps.keys():
+        preds = []
+        for map, goal in tqdm(zip(maps[data_type], goals[data_type])):
+            map = Map(map)
+            goal_node = Node(*extract_node_pos(goal))
+            
+            if args.heuristic == "cf":
+                pred = fill_cf_values(goal_node, map, diagonal_distance)
+            elif args.heuristic == "true_dists":
+                pred = fill_true_dists_8_way_cpp(goal_node, map)
+            
+            preds.append(pred)
+            break
+        
+        result[data_type] = np.array(preds)
 
-        # start = Node(*extract_node_pos(starts[i][0]))
-        goal_node = Node(*extract_node_pos(goals[i][0]))
-        cf_pred = fill_cf_values(goal_node, map, diagonal_distance)
-        cf_pred_arr.append([cf_pred])
-
-    cf_pred_arr = np.array(cf_pred_arr)
-
-    np.save(load_path / "cf_pred.npy", cf_pred_arr)
+    np.savez(load_dir / f"{args.heuristic}.npz", train=result["train"], valid=result["valid"], test=result["test"])
