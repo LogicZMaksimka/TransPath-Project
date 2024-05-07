@@ -1,7 +1,8 @@
 import copy
 from pathlib import Path
-from collections import deque
+from collections import deque, defaultdict
 from typing import List, Callable
+
 
 import numpy as np
 import argparse
@@ -250,14 +251,19 @@ def fill_true_dists_8_way_cpp(finish_node: Node, task_map: Map):
     return true_dists
 
 
+def calc_cf_values(true_dists, h_values, goal_node):
+    true_dists[true_dists == 0.0] = np.inf
+    cf_values = h_values / true_dists
+    cf_values[goal_node.i][goal_node.j] = 1
+    return cf_values
+
 def fill_cf_values(finish_node: Node, task_map: Map, heuristic_func: Callable):
     true_dists = fill_true_dists_8_way_cpp(finish_node, task_map)
-    true_dists[true_dists == 0.0] = 1 # to ignore zero division
+    true_dists[true_dists == 0.0] = np.inf # to ignore zero division
     
     h_values = fill_heuristic_values(finish_node, task_map, heuristic_func)
 
     cf_values = h_values / true_dists
-    cf_values[task_map._cells == 1] = 0 # reconstruct walls
     cf_values[finish_node.i][finish_node.j] = 1
 
     return cf_values
@@ -274,33 +280,85 @@ def extract_node_pos(map):
     pos = np.where(map == 1)
     return (pos[0][0], pos[1][0])
 
+def suggest_goals(map, n=10):
+    empty_cells = np.array(list(zip(*np.where(map == 1))))
+    goal_ids = np.random.choice(np.arange(len(empty_cells)), size=n, replace=False)
+    goal_cells = empty_cells[goal_ids]
+
+    goal_maps = np.full((n, *map.shape), 0)
+    for i, cell in enumerate(goal_cells):
+        goal_maps[i][cell[0], cell[1]] = 1
+
+    return goal_cells
+
+def suggest_start(map, hardness_map, hardness_threshold=1.05):
+    hard_cells = np.array(list(zip(*np.where((hardness_map > hardness_threshold) & (map == 1)))))
+
+    if len(hard_cells) == 0:
+        # print("WARNING: NO HARD ROUTES DETECTED")
+        return suggest_goals(map, 1)[0]
+
+    cell_id = np.random.choice(np.arange(len(hard_cells)))
+    return hard_cells[cell_id]
+
+def create_tasks(map):
+    map_example = Map(map)
+    map_example = invert_cells(map_example)
+    goals = suggest_goals(map)
+    starts = []
+    cfs = []
+    for goal in goals:
+        goal_node = Node(goal[0], goal[1])
+        
+        heuristic_values = fill_heuristic_values(goal_node, map_example, diagonal_distance)
+        true_dists = fill_true_dists_8_way_cpp(goal_node, map_example)
+        cf_values = calc_cf_values(true_dists, heuristic_values, goal_node)
+        
+        # Replace unreachable nodes with zeros
+        map_size = map_example.get_size()
+        max_path_length = map_size[0] * map_size[1]
+        unreachable_nodes_mask = (true_dists > max_path_length) | (map == 0)
+        # Creating start node
+        route_hardness_map = 1 / cf_values
+        # Filling walls and unreachable nodes with zeros
+        true_dists[unreachable_nodes_mask] = 0
+        heuristic_values[unreachable_nodes_mask] = 0
+        cf_values[unreachable_nodes_mask] = 0
+        route_hardness_map[unreachable_nodes_mask] = 0
+        
+        start = suggest_start(map, route_hardness_map)
+
+        starts.append(start)
+        cfs.append(cf_values)
+    
+    return starts, goals, cfs
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--loaddir', type=str)
-    parser.add_argument('--heuristic', type=str, default="cf")
+    parser.add_argument('--maps_path', type=str)
+    # parser.add_argument('--heuristic', type=str, default="cf")
     args = parser.parse_args()
 
-    load_dir = Path(args.loaddir)
+    load_path = Path(args.maps_path)
 
-    goals = np.load(load_dir / "goals.npz")
-    maps = np.load(load_dir / "maps.npz")
+    maps = np.load(load_path)
 
-    result = {}
+    result = {
+        "cfs": defaultdict(list),
+        "starts": defaultdict(list),
+        "goals": defaultdict(list),
+    }
     for data_type in maps.keys():
-        preds = []
-        for map, goal in tqdm(zip(maps[data_type], goals[data_type])):
-            map = Map(map)
-            goal_node = Node(*extract_node_pos(goal))
-            
-            if args.heuristic == "cf":
-                pred = fill_cf_values(goal_node, map, diagonal_distance)
-            elif args.heuristic == "true_dists":
-                pred = fill_true_dists_8_way_cpp(goal_node, map)
-            
-            preds.append(pred)
-            break
-        
-        result[data_type] = np.array(preds)
+        for map in tqdm(maps[data_type]):
 
-    np.savez(load_dir / f"{args.heuristic}.npz", train=result["train"], valid=result["valid"], test=result["test"])
+            starts, goals, cfs = create_tasks(map)
+            result["cfs"][data_type].append(cfs)
+            result["starts"][data_type].append(starts)
+            result["goals"][data_type].append(goals)
+
+
+    for t in ["cfs", "starts", "goals"]:
+        np.savez(load_path.parent / f"{load_path.stem}_{t}.npz", 
+                 train=result[t]["train"], 
+                 valid=result[t]["valid"], 
+                 test=result[t]["test"])
