@@ -26,6 +26,8 @@ from scipy.spatial import distance
 import cppimport.import_hook
 from grid_planner import grid_planner
 
+np.random.seed(42)
+
 class Map:
     """
     Square grid map class represents the environment for our moving agent.
