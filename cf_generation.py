@@ -287,11 +287,18 @@ def suggest_goals(map, n=10):
     goal_ids = np.random.choice(np.arange(len(empty_cells)), size=n, replace=False)
     goal_cells = empty_cells[goal_ids]
 
-    goal_maps = np.full((n, *map.shape), 0)
-    for i, cell in enumerate(goal_cells):
-        goal_maps[i][cell[0], cell[1]] = 1
+    # goal_maps = np.full((n, *map.shape), 0)
+    # for i, cell in enumerate(goal_cells):
+    #     goal_maps[i][cell[0], cell[1]] = 1
 
     return goal_cells
+
+def suggest_goal(map):
+    empty_cells = np.array(list(zip(*np.where(map == 1))))
+    goal_id = np.random.choice(np.arange(len(empty_cells)))
+    goal_cell = empty_cells[goal_id]
+
+    return goal_cell
 
 def suggest_start(map, hardness_map, hardness_threshold=1.05):
     hard_cells = np.array(list(zip(*np.where((hardness_map > hardness_threshold) & (map == 1)))))
@@ -305,12 +312,14 @@ def suggest_start(map, hardness_map, hardness_threshold=1.05):
 def create_tasks(map):
     map_example = Map(map)
     map_example = invert_cells(map_example)
-    suggested_goals = suggest_goals(map)
 
     goals = []
     starts = []
     cfs = []
-    for goal in suggested_goals:
+
+    n_tasks = 0
+    while n_tasks < 10:
+        goal = suggest_goal(map)
         goal_node = Node(goal[0], goal[1])
         
         heuristic_values = fill_heuristic_values(goal_node, map_example, diagonal_distance)
@@ -329,48 +338,95 @@ def create_tasks(map):
         cf_values[unreachable_nodes_mask] = 0
         route_hardness_map[unreachable_nodes_mask] = 0
         
+        
         start = suggest_start(map, route_hardness_map)
-
         if start is not None:
+            n_tasks += 1
+
             goals.append(goal)
             starts.append(start)
             cfs.append(cf_values)
     
     return starts, goals, cfs
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--maps_path', type=str)
-    # parser.add_argument('--heuristic', type=str, default="cf")
-    args = parser.parse_args()
+def generated_tasks(maps):
+    tasks = {
+        "cfs": [],
+        "starts": [],
+        "goals": [],
+        "maps": [],
+    }
 
-    load_path = Path(args.maps_path)
+    for map in tqdm(maps):
+        starts, goals, cfs = create_tasks(map)
+        # if starts is None: # map contains impossible goal
+        #     continue
+        # print("->", len(cfs))
+        
+        tasks["maps"].append(map)
+        tasks["cfs"].append(cfs)
+        tasks["starts"].append(starts)
+        tasks["goals"].append(goals)
+    
+    return tasks
 
-    maps = np.load(load_path)
-
-    result = {
+def merge_predictions(dir):
+    merged_tasks = {
         "cfs": defaultdict(list),
         "starts": defaultdict(list),
         "goals": defaultdict(list),
+        "maps": defaultdict(list),
     }
+    for t in ["train", "test", "valid"]:
+        load_dir = dir / t
+        for path in tqdm(load_dir.glob('*')):
+            batch = np.load(path)
+            for k in merged_tasks.keys():
+                for task in batch[k]:
+                    merged_tasks[k][t].append(task)
+    return merged_tasks
+    
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--maps_path', type=str)
+    args = parser.parse_args()
+
+    load_path = Path(args.maps_path)
+    
+    
+    # Generating tasks
+
+    maps = np.load(load_path)
+    batch_size = 100
     for data_type in maps.keys():
-        # print(data_type)
-        # print("###########", len(maps[data_type]))
-        for map in tqdm(maps[data_type]):
+        print(f"Processing {data_type}")
 
-            starts, goals, cfs = create_tasks(map)
-
-            # print("->", len(cfs))
-
-            result["cfs"][data_type].append(cfs)
-            result["starts"][data_type].append(starts)
-            result["goals"][data_type].append(goals)
+        n_batches = (len(maps[data_type]) + batch_size - 1) // batch_size
+        for batch_idx in tqdm(range(n_batches)):
+            
+            batch = maps[data_type][batch_size*batch_idx: batch_size*(batch_idx+1)]
+            
+            tasks_batch = generated_tasks(batch)
         
-        # print(len(result["cfs"][data_type]))
+            save_dir = load_path.parent / data_type 
+            save_dir.mkdir(parents=True, exist_ok=True)
+            save_path = save_dir/ f"{load_path.stem}_batch_{batch_idx}.npz"
+            np.savez(save_path, 
+                     starts=tasks_batch["starts"],
+                     goals=tasks_batch["goals"],
+                     maps=tasks_batch["maps"],
+                     cfs=tasks_batch["cfs"],
+                     )
+            
 
+    # Merging predictions
+    data = merge_predictions(load_path.parent)
 
-    for t in ["cfs", "starts", "goals"]:
-        np.savez(load_path.parent / f"{load_path.stem}_{t}.npz", 
-                 train=result[t]["train"], 
-                 valid=result[t]["valid"], 
-                 test=result[t]["test"])
+    # Saving merged    
+    for k in data.keys():
+        np.savez(load_path.parent / f"{load_path.stem}_{k}.npz", 
+                 train=data[k]["train"], 
+                 valid=data[k]["valid"], 
+                 test=data[k]["test"])
