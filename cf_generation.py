@@ -296,9 +296,8 @@ def suggest_goals(map, n=10):
 def suggest_start(map, hardness_map, hardness_threshold=1.05):
     hard_cells = np.array(list(zip(*np.where((hardness_map > hardness_threshold) & (map == 1)))))
 
-    if len(hard_cells) == 0:
-        # print("WARNING: NO HARD ROUTES DETECTED")
-        return suggest_goals(map, 1)[0]
+    if len(hard_cells) == 0: # NO HARD ROUTES DETECTED or NO PATHS EXISTS
+        return None
 
     cell_id = np.random.choice(np.arange(len(hard_cells)))
     return hard_cells[cell_id]
@@ -306,10 +305,12 @@ def suggest_start(map, hardness_map, hardness_threshold=1.05):
 def create_tasks(map):
     map_example = Map(map)
     map_example = invert_cells(map_example)
-    goals = suggest_goals(map)
+    suggested_goals = suggest_goals(map)
+
+    goals = []
     starts = []
     cfs = []
-    for goal in goals:
+    for goal in suggested_goals:
         goal_node = Node(goal[0], goal[1])
         
         heuristic_values = fill_heuristic_values(goal_node, map_example, diagonal_distance)
@@ -330,8 +331,10 @@ def create_tasks(map):
         
         start = suggest_start(map, route_hardness_map)
 
-        starts.append(start)
-        cfs.append(cf_values)
+        if start is not None:
+            goals.append(goal)
+            starts.append(start)
+            cfs.append(cf_values)
     
     return starts, goals, cfs
 
@@ -351,12 +354,19 @@ if __name__ == "__main__":
         "goals": defaultdict(list),
     }
     for data_type in maps.keys():
+        # print(data_type)
+        # print("###########", len(maps[data_type]))
         for map in tqdm(maps[data_type]):
 
             starts, goals, cfs = create_tasks(map)
+
+            # print("->", len(cfs))
+
             result["cfs"][data_type].append(cfs)
             result["starts"][data_type].append(starts)
             result["goals"][data_type].append(goals)
+        
+        # print(len(result["cfs"][data_type]))
 
 
     for t in ["cfs", "starts", "goals"]:
