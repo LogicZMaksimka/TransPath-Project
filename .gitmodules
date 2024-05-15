@@ -1,0 +1,3 @@
+[submodule "lib/TransPath"]
+	path = lib/TransPath
+	url = https://github.com/AIRI-Institute/TransPath.git
