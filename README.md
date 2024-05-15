@@ -4,3 +4,8 @@ https://api.wandb.ai/links/blain/4679lk9x
   
 Current best models results:   
 metrics_visualisation.ipynb 
+  
+Maps generation:  
+map_generation.ipynb  
+
+
