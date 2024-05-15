@@ -18,7 +18,12 @@ python generate_spp_instances.py
     --test-size 100
 ```
 
+Examples:
+![Maps](https://github.com/LogicZMaksimka/TransPath-Project/pictures/maps.png)
+
+
 ## Tasks generation
+For every map we generate 10 start/goal nodes with _hardness_ > 1.05
 
 Task generation script
 ```
