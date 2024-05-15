@@ -32,6 +32,15 @@ python task_generation.py --maps_path <path_to_maps>
 
 ## Model training
 
+### FS+PPM model
+
+Training:
+```
+python lib.TransPath.train.py 
+    --mode f
+    --batch 16
+```
+
 View FS+PPM model **training report**:  
 https://api.wandb.ai/links/blain/4679lk9x  
 
