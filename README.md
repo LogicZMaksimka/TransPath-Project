@@ -34,6 +34,13 @@ python task_generation.py --maps_path <path_to_maps>
 
 ### FS+PPM model
 
+Get focal values:
+
+```
+python get_focals.py
+    --filename ./data/1k_128x2_v2/
+```
+
 Training:
 ```
 python lib.TransPath.train.py 
