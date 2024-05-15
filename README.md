@@ -19,7 +19,7 @@ python generate_spp_instances.py
 ```
 
 Examples:
-![Maps](https://github.com/LogicZMaksimka/TransPath-Project/pictures/maps.png)
+![Maps](https://github.com/LogicZMaksimka/TransPath-Project/blob/master/pictures/maps.png)
 
 
 ## Tasks generation
