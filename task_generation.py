@@ -424,7 +424,7 @@ if __name__ == "__main__":
     # Merging predictions
     data = merge_predictions(load_path.parent)
 
-    # Saving merged    
+    # Saving merged
     for k in data.keys():
         np.savez(load_path.parent / f"{load_path.stem}_{k}.npz", 
                  train=data[k]["train"], 
